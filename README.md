@@ -23,7 +23,7 @@
 1. 將專案 clone 到本機  
 
 ```bash
-git clone https://github.com/<你的使用者名稱>/<repo-name>.git
+git clone https://github.com/GGbby/MPPQNet.git
 cd <repo-name>
 ```
 
@@ -70,17 +70,15 @@ python pipeline_dictlearning.py --dataset path/to/dataset --epochs 100
 ├── .gitignore
 ├── README.md
 ├── requirements.txt
-├── feature_extraction.py
-├── compression_utils.py
-├── dictionary_and_gaussian.py
-├── encode_pipeline.py
-├── decode_pipeline.py
-├── mpnn_qnn.py
-├── networks.py
-├── pipeline_dictlearning.py
-├── configs/
-│   ├── encode_config.yaml
-│   └── decode_config.yaml
+└── MPPQNet/
+    ├── feature_extraction.py
+    ├── compression_utils.py
+    ├── dictionary_and_gaussian.py
+    ├── encode_pipeline.py
+    ├── decode_pipeline.py
+    ├── mpnn_qnn.py
+    ├── networks.py
+    ├── pipeline_dictlearning.py    
 └── dataset/
-    └── .gitkeep
+    └── your data
 ```
