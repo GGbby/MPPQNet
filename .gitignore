@@ -29,4 +29,5 @@ bitstreams/
 
 # ------------------------------------------------------------------
 # 忽略整個 dataset 資料夾
-dataset/
+dataset/*
+!dataset/.gitkeep
