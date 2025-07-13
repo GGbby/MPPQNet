@@ -1,5 +1,5 @@
 # auto_plyGrabencode.py
-# 從 ZED 攝影機擷取最新一幀 .ply，並呼叫 encode_pipeline.py 壓縮成 .bin
+# 從 ZED 攝影機擷取最新一幀 .ply，呼叫 encode_pipeline.py 壓縮成 .bin，然後刪除該 .ply
 
 import time
 import os
@@ -16,24 +16,23 @@ NUM_BINS      = 128               # histogram bins 數量
 FPS           = 1.0               # 擷取與壓縮頻率 (Hz)
 #—————————————#
 
-# 確保資料夾存在
-os.makedirs(ZED_PLY_DIR, exist_ok=True)
-os.makedirs(BITSTREAM_DIR, exist_ok=True)
+os.makedirs(ZED_PLY_DIR,   exist_ok=True)
+os.makedirs(BITSTREAM_DIR,  exist_ok=True)
 
-last_ts = None  # 紀錄上一次處理的時間戳
+last_ts = None
 while True:
     ts = int(time.time())
     ply_path = os.path.join(ZED_PLY_DIR, f"{ts}.ply")
 
-    # 1. 使用 grab_and_save_ply 擷取並儲存 ply
+    # 1. 擷取並儲存 ply
     try:
         grab_and_save_ply(ply_path)
     except Exception as e:
-        print(f"[錯誤] 擷取 ply 失敗: {e}")
+        print(f"[錯誤] grab_and_save_ply(): {e}")
         time.sleep(1.0 / FPS)
         continue
 
-    # 2. 若時間戳不同，才進行壓縮
+    # 2. 只在新的時間戳才進行壓縮
     if ts != last_ts:
         last_ts = ts
         cmd = [
@@ -47,9 +46,12 @@ while True:
         ]
         try:
             subprocess.run(cmd, check=True)
-            print(f"[訊息] 已為 {ts}.ply 執行壓縮並輸出 .bin")
+            print(f"[訊息] 已壓縮 {ts}.ply -> bitstreams_bin/{ts}_stream.bin")
+            # 3. 刪除剛剛壓縮過的 ply
+            os.remove(ply_path)
+            print(f"[訊息] 已刪除暫存 ply：{ts}.ply")
         except subprocess.CalledProcessError as e:
             print(f"[錯誤] 壓縮失敗: {e}")
 
-    # 3. 等待下個週期
+    # 4. 等待下個週期
     time.sleep(1.0 / FPS)
