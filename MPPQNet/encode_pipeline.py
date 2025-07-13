@@ -80,6 +80,7 @@ def encode_one(ply_path, pf_weight, K, num_bins, out_dir, status_bar):
 
     for d in range(F_t.shape[1]):
         thr_t = thr_t_list[d]
+        col = F_t[:, d].contiguous()    # 消除torch警告
         idx   = torch.bucketize(F_t[:, d], thr_t)  # (M,)
         labels_t[:, d] = idx
         recon_t[:, d]  = fvecs_t[d][idx]
@@ -95,7 +96,7 @@ def encode_one(ply_path, pf_weight, K, num_bins, out_dir, status_bar):
         'fvecs':       fvecs_arr,
         'thresholds':  thr_arr,
         'labels':      labels,
-        'recon_feats': recon_feats
+        #   'recon_feats': recon_feats  #測試decode時不用
     }
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"{base}_stream.bin")
