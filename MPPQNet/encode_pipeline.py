@@ -81,7 +81,7 @@ def encode_one(ply_path, pf_weight, K, num_bins, out_dir, status_bar):
     for d in range(F_t.shape[1]):
         thr_t = thr_t_list[d]
         col = F_t[:, d].contiguous()    # 消除torch警告
-        idx   = torch.bucketize(F_t[:, d], thr_t)  # (M,)
+        idx = torch.bucketize(col, thr_t)  # (M,)
         labels_t[:, d] = idx
         recon_t[:, d]  = fvecs_t[d][idx]
 
