@@ -23,14 +23,14 @@ while True:
     if ts != last_ts:
         last_ts = ts
         cmd = [
-            sys.executable, 'encode_pipeline_v2_bin.py',
+            sys.executable, 'encode_pipeline.py',
             '--input_dir',  ZED_PLY_DIR,
-            '--pf',         'mppn_pf.pth',
+            '--pf',         './pth/b128/mppn_pf_k128b128.pth',
             '--latest',
-            '--K',           '6',
-            '--num_bins',    '64',
+            '--K',           '128',
+            '--num_bins',    '128',
             '--num_clusters','128',
-            '--num_res_clusters','64',
+            '--num_res_clusters','128',
             '--out_dir',     BITSTREAM_DIR,
             '--alpha',       '0.7'
         ]
