@@ -1,5 +1,5 @@
 # encode_pipeline.py
-# GPU 上使用 PFNetwork 進行 6 維特徵乘積量化（Product Quantization），純 PF 流程，不含字典殘差
+# GPU 上使用 PFNetwork 進行 6 維特徵乘積量化，並自動過濾 ZED 產生的 NaN 點雲
 
 import argparse
 import os
@@ -35,12 +35,20 @@ def encode_one(ply_path, pf_weight, K, num_bins, out_dir, status_bar):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     F_t = torch.from_numpy(F).to(device)  # (N,6)
 
+    # 2.1 過濾 NaN 行
+    valid_mask = ~torch.isnan(F_t).any(dim=1)
+    if valid_mask.sum() == 0:
+        raise RuntimeError(f"[{base}] 全部點皆為 NaN，無法壓縮")
+    F_valid = F_t[valid_mask]  # (M_valid,6)
+
     fvecs_list = []
-    thr_list = []
-    for d in range(F_t.shape[1]):
-        col = F_t[:, d]
+    thr_list   = []
+    for d in range(F_valid.shape[1]):
+        col = F_valid[:, d]
         # GPU 上計算直方圖
-        h = torch.histc(col, bins=num_bins, min=col.min().item(), max=col.max().item())
+        h = torch.histc(col, bins=num_bins,
+                        min=col.min().item(),
+                        max=col.max().item())
         h = h / h.sum()
         H = h.cpu().numpy().astype(np.float32)
 
@@ -52,24 +60,25 @@ def encode_one(ply_path, pf_weight, K, num_bins, out_dir, status_bar):
         thr_list.append(thr)
 
     fvecs_arr = np.stack(fvecs_list, axis=0)  # (6, K)
-    thr_arr = np.stack(thr_list, axis=0)      # (6, K-1)
+    thr_arr   = np.stack(thr_list,   axis=0)  # (6, K-1)
 
     # 3. 用 bucketize 做量化標籤並重建特徵
     status_bar.set_description(f"[{base}] 量化編碼")
     status_bar.refresh()
     labels_t = torch.zeros_like(F_t, dtype=torch.long)
-    recon_t = torch.zeros_like(F_t)
+    recon_t  = torch.zeros_like(F_t)
     thr_t_list = [torch.from_numpy(t).to(device) for t in thr_arr]
-    fvecs_t = torch.from_numpy(fvecs_arr).to(device)
+    fvecs_t    = torch.from_numpy(fvecs_arr).to(device)
 
-    for d in range(F_t.shape[1]):
+    # 3.1 只對 valid 行做 bucketize
+    for d in range(F_valid.shape[1]):
         thr_t = thr_t_list[d]
-        idx = torch.bucketize(F_t[:, d], thr_t)  # (N,)
-        labels_t[:, d] = idx
-        recon_t[:, d] = fvecs_t[d][idx]
+        idx   = torch.bucketize(F_valid[:, d], thr_t)  # (M_valid,)
+        labels_t[valid_mask, d] = idx
+        recon_t[valid_mask, d]  = fvecs_t[d][idx]
 
-    labels = labels_t.cpu().numpy()     # (N,6)
-    recon_feats = recon_t.cpu().numpy() # (N,6)
+    labels      = labels_t.cpu().numpy()    # (N,6)
+    recon_feats = recon_t.cpu().numpy()     # (N,6)
 
     # 4. 序列化輸出 .bin
     status_bar.set_description(f"[{base}] 寫出 bit-stream (.bin)")
@@ -89,7 +98,7 @@ def encode_one(ply_path, pf_weight, K, num_bins, out_dir, status_bar):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Encode .ply -> .bin using GPU PFNetwork"
+        description="Encode .ply -> .bin using GPU PFNetwork with NaN-filtering"
     )
     parser.add_argument("--input_dir",  required=True, help="來源 .ply 資料夾")
     parser.add_argument("--pf",         required=True, help="PFNetwork 權重檔 (.pth)")
@@ -100,8 +109,8 @@ def main():
     parser.add_argument("--latest",      action="store_true",     help="只處理最後修改的 .ply")
     args = parser.parse_args()
 
-    # 列出所有 .ply，依修改時間排序
-    files = sorted(glob.glob(os.path.join(args.input_dir, "*.ply")), key=os.path.getmtime)
+    files = sorted(glob.glob(os.path.join(args.input_dir, "*.ply")),
+                   key=os.path.getmtime)
     if args.latest and files:
         files = [files[-1]]
     elif args.sample_n and args.sample_n < len(files):
@@ -117,6 +126,7 @@ def main():
         outer.update(0)
     status.close()
     print("Encode 完成 ▶", args.out_dir)
+
 
 if __name__ == '__main__':
     main()
