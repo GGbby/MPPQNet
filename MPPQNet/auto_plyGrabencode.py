@@ -1,42 +1,55 @@
-# auto_plyGrabencode.py (改良版)
-# 正常自動化流程不會用到，測試用
-import time, os, subprocess, sys
+# auto_plyGrabencode.py
+# 從 ZED 攝影機擷取最新一幀 .ply，並呼叫 encode_pipeline.py 壓縮成 .bin
+
+import time
+import os
+import subprocess
+import sys
 from plyget import grab_and_save_ply
 
-ZED_PLY_DIR   = 'zed_plys'
-BITSTREAM_DIR = 'bitstreams_bin'
-os.makedirs(ZED_PLY_DIR,   exist_ok=True)
-os.makedirs(BITSTREAM_DIR,  exist_ok=True)
+#—— 參數設定 ——#
+ZED_PLY_DIR   = 'zed_plys'       # 存放擷取的 ply 檔案資料夾
+BITSTREAM_DIR = 'bitstreams_bin'  # 輸出 .bin 壓縮檔資料夾
+PF_WEIGHT     = './pth/b128/mppn_pf_k128b128.pth'  # PFNetwork 權重檔路徑
+K             = 128               # PFNetwork 類別數 K
+NUM_BINS      = 128               # histogram bins 數量
+FPS           = 1.0               # 擷取與壓縮頻率 (Hz)
+#—————————————#
 
-last_ts = None
+# 確保資料夾存在
+os.makedirs(ZED_PLY_DIR, exist_ok=True)
+os.makedirs(BITSTREAM_DIR, exist_ok=True)
+
+last_ts = None  # 紀錄上一次處理的時間戳
 while True:
     ts = int(time.time())
     ply_path = os.path.join(ZED_PLY_DIR, f"{ts}.ply")
+
+    # 1. 使用 grab_and_save_ply 擷取並儲存 ply
     try:
         grab_and_save_ply(ply_path)
     except Exception as e:
-        print(f"[Error] grab_and_save_ply(): {e}")
-        time.sleep(1.0)
+        print(f"[錯誤] 擷取 ply 失敗: {e}")
+        time.sleep(1.0 / FPS)
         continue
 
-    # 只在秒數跳變時觸發一次
+    # 2. 若時間戳不同，才進行壓縮
     if ts != last_ts:
         last_ts = ts
         cmd = [
             sys.executable, 'encode_pipeline.py',
-            '--input_dir',  ZED_PLY_DIR,
-            '--pf',         './pth/b128/mppn_pf_k128b128.pth',
+            '--input_dir', ZED_PLY_DIR,
+            '--pf',         PF_WEIGHT,
             '--latest',
-            '--K',           '128',
-            '--num_bins',    '128',
-            '--num_clusters','128',
-            '--num_res_clusters','128',
-            '--out_dir',     BITSTREAM_DIR,
-            '--alpha',       '0.7'
+            '--K',          str(K),
+            '--num_bins',   str(NUM_BINS),
+            '--out_dir',    BITSTREAM_DIR
         ]
         try:
             subprocess.run(cmd, check=True)
+            print(f"[訊息] 已為 {ts}.ply 執行壓縮並輸出 .bin")
         except subprocess.CalledProcessError as e:
-            print(f"[Error] encode failed: {e}")
+            print(f"[錯誤] 壓縮失敗: {e}")
 
-    time.sleep(1.0)
+    # 3. 等待下個週期
+    time.sleep(1.0 / FPS)
