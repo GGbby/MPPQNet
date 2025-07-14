@@ -32,7 +32,8 @@ def write_ply(filename, verts, colors):
         f.write("property uchar red\nproperty uchar green\nproperty uchar blue\n")
         f.write("end_header\n")
         for v, c in zip(verts, colors):
-            x, y, z = v
+            # 只取前三維作為 XYZ，其餘若有也一併忽略
+            x, y, z = v[:3]
             r, g, b = (c * 255).astype(np.uint8)
             f.write(f"{x:.4f} {y:.4f} {z:.4f} {r} {g} {b}\n")
 

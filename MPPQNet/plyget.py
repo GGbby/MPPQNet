@@ -20,7 +20,8 @@ def grab_and_save_ply(output_path):
 
         # 3. 解包成 Open3D point cloud
         H, W, _ = xyzrgba.shape
-        pts = xyzrgba[:, :, :3].reshape(-1, 3)
+        # 取前三維 (XYZ)，如果未來 MEASURE 改版有多維的話也不會多 unpack
+        pts = xyzrgba[..., :3].reshape(-1, 3)
 
         # 先轉整數，再做位元運算
         rgba_float = xyzrgba[:, :, 3]            # float32 代表 RGBA bits
