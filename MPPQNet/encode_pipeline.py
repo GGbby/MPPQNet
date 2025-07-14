@@ -1,12 +1,14 @@
 # encode_pipeline.py
 # 在 GPU (CUDA) 上使用 PFNetwork 進行 6 維特徵乘積量化
 # 自動過濾 NaN/inf 點並跳過空點雲
+# 使用 zlib 壓縮 pickle 流以減少 bit-stream 大小
 
 import argparse
 import os
 import glob
 import random
 import pickle
+import zlib                        # 用於壓縮 pickle 流
 
 import numpy as np
 import torch
@@ -52,61 +54,61 @@ def encode_one(ply_path, pf_weight, K, num_bins, out_dir, status_bar):
     fvecs_list = []
     thr_list   = []
     for d in range(F_t.shape[1]):
+        # GPU 上計算直方圖
         col = F_t[:, d]
-        # 在 GPU 上計算直方圖
         h = torch.histc(col, bins=num_bins,
                         min=col.min().item(),
                         max=col.max().item())
         h = h / h.sum()
         H = h.cpu().numpy().astype(np.float32)
 
-        # 執行一次 forward (載入預訓練權重)
+        # 執行一次 forward，載入預訓練權重
         _, f_vec, thr = run_mppn(
             H, K=K, epochs=1, device=device, pf_weight=pf_weight
         )
         fvecs_list.append(f_vec)
         thr_list.append(thr)
 
-    fvecs_arr = np.stack(fvecs_list, axis=0)  # (6, K)
-    thr_arr   = np.stack(thr_list,   axis=0)  # (6, K-1)
+    # 把 list 轉成陣列，fvecs: (6,K), thr: (6,K-1)
+    fvecs_arr = np.stack(fvecs_list, axis=0)
+    thr_arr   = np.stack(thr_list,   axis=0)
 
     # 4. Bucketize + 重建 (全在 GPU)
     status_bar.set_description(f"[{base}] 量化與重建")
     status_bar.refresh()
     labels_t = torch.zeros_like(F_t, dtype=torch.long)
-    recon_t  = torch.zeros_like(F_t)
     thr_t_list = [torch.from_numpy(t).to(device) for t in thr_arr]
     fvecs_t    = torch.from_numpy(fvecs_arr).to(device)
 
     for d in range(F_t.shape[1]):
-        thr_t = thr_t_list[d]
-        col = F_t[:, d].contiguous()    # 消除torch警告
-        idx = torch.bucketize(col, thr_t)  # (M,)
+        col = F_t[:, d].contiguous()         # 先強制成 contiguous
+        idx = torch.bucketize(col, thr_t_list[d])
         labels_t[:, d] = idx
-        recon_t[:, d]  = fvecs_t[d][idx]
 
-    labels      = labels_t.cpu().numpy()    # (M,6)
-    recon_feats = recon_t.cpu().numpy()     # (M,6)
+    labels = labels_t.cpu().numpy().astype(np.uint16)  # (M,6) 存成 uint16
 
-    # 5. 序列化輸出 .bin
-    status_bar.set_description(f"[{base}] 輸出 .bin")
-    status_bar.refresh()
+    # 5. 序列化 payload
     payload = {
-        'shape':       F.shape,
-        'fvecs':       fvecs_arr,
-        'thresholds':  thr_arr,
-        'labels':      labels,
-        #   'recon_feats': recon_feats  #測試decode時不用
+        'shape':      F.shape,       # 原始點雲大小 (M,6)
+        'fvecs':      fvecs_arr,     # Product Quantization 字典
+        'thresholds': thr_arr,       # 分界閾值
+        'labels':     labels,        # 量化後索引
     }
+
+    # 6. pickle + zlib 壓縮，寫成 .bin
+    status_bar.set_description(f"[{base}] 壓縮並輸出 .bin")
+    status_bar.refresh()
+    raw = pickle.dumps(payload)           # dump 成 bytes
+    comp = zlib.compress(raw, level=9)    # zlib 最大壓縮等級
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"{base}_stream.bin")
     with open(out_path, 'wb') as f:
-        pickle.dump(payload, f)
+        f.write(comp)                     # 寫入壓縮後 bytes
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="GPU PFNetwork 量化：.ply -> .bin (auto NaN-filter)"
+        description="GPU PFNetwork 量化：.ply -> .bin (zlib 壓縮)"
     )
     parser.add_argument("--input_dir",  required=True, help="原始 .ply 資料夾")
     parser.add_argument("--pf",         required=True, help="PFNetwork 權重檔 (.pth)")
@@ -117,6 +119,7 @@ def main():
     parser.add_argument("--latest",      action="store_true",      help="僅處理最新一個 .ply")
     args = parser.parse_args()
 
+    # 只處理最新一個或隨機 n 個 ply
     files = sorted(glob.glob(os.path.join(args.input_dir, "*.ply")),
                    key=os.path.getmtime)
     if args.latest and files:
