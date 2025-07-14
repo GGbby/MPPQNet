@@ -47,19 +47,25 @@ try:
             time.sleep(1.0 / FPS)
             continue
 
-        # 3. 取得 XYZ
-        mat_xyz = sl.Mat()
-        zed.retrieve_measure(mat_xyz, sl.MEASURE.XYZ)
-        xyz = mat_xyz.get_data()  # (H,W,3) float32
+        # 3. 同步取得 XYZ + RGBA bits
+        mat = sl.Mat()
+        zed.retrieve_measure(mat, sl.MEASURE.XYZRGBA)
+        xyzrgba = mat.get_data()           # float32, shape=(H,W,4)
 
-        # 4. 取得 RGB
-        mat_rgb = sl.Mat()
-        zed.retrieve_image(mat_rgb, sl.VIEW.LEFT)
-        img = mat_rgb.get_data()  # (H,W,4) uint8
+        # 4. 展平並拆出 XYZ 與 RGB
+        H, W, _ = xyzrgba.shape
+        # XYZ
+        pts = xyzrgba[..., :3].reshape(-1, 3)   # (H*W,3)
+        # RGBA bits 存在第 4 channel
+        rgba_flat = xyzrgba[..., 3].reshape(-1).astype(np.uint32)  # (H*W,)
+        rgb_int   = rgba_flat & 0x00FFFFFF                         # 取低 24 bit
+        # normalize 到 [0,1]
+        cols      = (rgb_int.astype(np.float32) / float(2**24 - 1)).reshape(-1,1)
+        cols      = np.repeat(cols, 3, axis=1)                     # (H*W,3)
 
-        # 5. 建立點雲並寫 ply
-        ts = int(time.time())
-        ply_path = os.path.join(ZED_PLY_DIR, f"{ts}.ply")
+        # 5. 過濾掉無效或 z<=0 點
+        mask = (pts[:,2] > 0) & np.isfinite(pts).all(axis=1)
+        pts, cols = pts[mask], cols[mask]
 
         # flatten + 過濾
         H, W, _ = xyz.shape
