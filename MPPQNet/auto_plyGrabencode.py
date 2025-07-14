@@ -70,7 +70,7 @@ try:
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pts.astype(np.float32))
         pcd.colors = o3d.utility.Vector3dVector(cols.astype(np.float32))
-        o3d.io.write_point_cloud(ply_path, pcd)
+        o3d.io.write_point_cloud(ZED_PLY_DIR, pcd)
 
         # 6. 只在新檔才做壓縮
         if ts != last_ts:
@@ -88,7 +88,7 @@ try:
                 subprocess.run(cmd, check=True)
                 print(f"[訊息] 已壓縮 {ts}.ply → bitstreams_bin/{ts}_stream.bin")
                 # 刪除暫存 ply
-                os.remove(ply_path)
+                os.remove(ZED_PLY_DIR)
                 print(f"[訊息] 已刪除暫存 ply：{ts}.ply")
             except subprocess.CalledProcessError as e:
                 print(f"[錯誤] 壓縮失敗: {e}")
