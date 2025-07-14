@@ -67,13 +67,6 @@ try:
         mask = (pts[:,2] > 0) & np.isfinite(pts).all(axis=1)
         pts, cols = pts[mask], cols[mask]
 
-        # flatten + 過濾
-        H, W, _ = xyz.shape
-        pts = xyz.reshape(-1,3)
-        cols = (img[...,:3].reshape(-1,3).astype(np.float32) / 255.0)
-        mask = (pts[:,2] > 0) & np.isfinite(pts).all(axis=1)
-        pts, cols = pts[mask], cols[mask]
-
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pts.astype(np.float32))
         pcd.colors = o3d.utility.Vector3dVector(cols.astype(np.float32))
